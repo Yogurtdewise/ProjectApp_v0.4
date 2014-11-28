@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html>
+	<head>
+
+	<meta charset="utf-8" />
+	<title>Tap Test</title>
+
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link rel="stylesheet" href="css/jquery.mobile-1.4.4.min.css"/>
+	<script src="js/jquery-1.11.1.min.js"></script>
+	<script src="js/jquery.mobile-1.4.4.min.js"></script>
+
+	<script type="text/javascript">
+	/************************************************************************************************************************************
+	* NOTE: There is currently a bug in the game that allows the user to tap a dead bug several times before it is registered as dead.  *
+	*  Considering the difficulties with the "while" loops and setInterval/setTimeout functions, it is deemed unworthy of trying to     *
+	*  find a work-around for the above bug.                                                                                            *
+	*                                                                                                                                   *
+	*  There is also an issue assigning Image() objects to variable objects. This issue is described below, before the bug properties   *
+	*  section. It does not (seem) to affect performance, but it certainly makes the code messier and less flexable.                    *
+	*                                                                                                                                   *
+	*  Also, it has been noted that at the current "bugDelay" of 1500, the Android .apk file is less stable. Some bugs are not properly *
+	*  drawn over when hit, or reaching the bottom of the canvas. At this time, the delay is kept at 1500 for the purposes of the "fun" *
+	*  factor, but the failed re-drawing is distracting. It is possible to create a re-draw function, but the function would duplicate  *
+	*  efforts. This issue will be discussed in class.                                                                                  *
+	*                                                                                                                                   *
+	*  Further, it is noted that the audio files do not play on the Android .apk. Research shows that additional permissions must be    *
+	*  obtained. These permissions can only be set via the Android "manifest.xml" that is in a "/res" folder. This problem seems beyond *
+	*  the scope of this project, but if the project is continued; the issue will need to be addressed.                                 *
+	*                                                                                                                                   *
+	*  Lastly, the splash screen does appear on the Android .apk, however it shows only for a brief period (flashes). A splash delay    *
+	*  plugin was found, but its use seems to prevent the splash screen from showing at all. This too must be addressed in class.       *
+	*************************************************************************************************************************************/
+	
+	/**********************************************************
+	* Global variables and objects used to define the canvas. *
+	***********************************************************/
+		var xTap; //The x-Coordinate, relative to the viewport, of a tap event.
+		var yTap; //The y-Coordinate, relative to the viewport, of a tap event.
+		//The viewport dimensions.
+		var viewport = {
+			width  : $(window).width(),
+			height : $(window).height()
+		};
+		var headHeight; //The header height.
+		var footHeight; //The footer height.
+		
+		var canvasHeight; //The canvas height, minus header and footer.
+		
+		var imgSize = 30; //Bug images currently 30x30.
+		var spawnArea = viewport.width - imgSize; //The range of x coordinates that bugs can spawn from.
+		
+		var tapError = 5; //The allowed error (increase to box size) to taps on bug boxes (in pixels).
+		
+		var canvas; //The canvas DOM element.
+		var ctx;    //The canvas 2d context.
+		
+	/************************************************************
+	* Global variables and objects used to define various bugs. *
+	*************************************************************/
+		
+		//Global variables used to pre-load images.
+		var blood;
+		var lady;
+		var bee;
+		var fly;
+		var cricket;
+		
+		/** <------------------------------- Ask Prof. Why this doesn't work....
+		var img = Object.create(null);
+		Object.defineProperty(img, "image", lady);
+		
+		var aLady = Object.create(img);
+		Object.defineProperty(aLady, "name", "lady");
+		Object.defineProperty(aLady, "moveX", 0);
+		Object.defineProperty(aLady, "moveY", 30);
+		Object.defineProperty(aLady, "speed", 50);
+		Object.defineProperty(aLady, "currentX", 0);
+		Object.defineProperty(aLady, "currentY", 0);
+		
+		//Object properties for specific bug types.
+		var aLady = {
+			name:  "lady",
+			moveX: 0,
+			moveY: 30,
+			speed: 50,
+			image: new Image(),
+			currentX: 0,
+			currentY: 0
+		}
+		**/
+		
+		/**
+		* NOTE: I wanted to include an image object in these objects. However I couldn't get the image object to accept an Image() value.
+		*  I tried re-writing the object using prototyping, but encountered "Property description must be an object: (a var pointing to an Image() object)" error.
+		*  I decided the debugging/learning curve was too high for this project and used a work-around. I will instead use an array of images, who's size is equal
+		*  to the size of the "bugs" array (See "bugImages"). Unfortunately, this greatly increases the work required to change the number of bugs, and makes the code
+		*  bulkier and less readable.
+		**/
+		
+		//Object properties for specific bug types.
+		var aLady = {
+			name:  "lady",
+			moveX: 0,
+			moveY: 2,
+			speed: 50,
+			currentX: 0,
+			currentY: 0,
+			value: 5
+		}
+		
+		var aBee = {
+			name:  "bee",
+			moveX: 10,
+			moveY: 5,
+			speed: 50,
+			currentX: 0,
+			currentY: 0,
+			value: 10
+		}
+		
+		var aFly = {
+			name:  "fly",
+			moveX: 30,
+			moveY: 10,
+			speed: 40,
+			currentX: 0,
+			currentY: 0,
+			value: 20
+		}
+		
+		var aCricket = {
+			name:  "cricket",
+			moveX: 125,
+			moveY: 20,
+			speed: 700,
+			currentX: 0,
+			currentY: 0,
+			value: 12
+		}
+		
+		/**
+		*A bug object.
+		*@param name A String indicating the type of bug.
+		*@param size An int indicating the dimensions of the image in pixels. All images are assumed to be size x size. Not used for current version.
+		*@param moveX An int indicating how far (in pixels) this bug moves on the x-plane, in a given instance.
+		*@param moveY An int indicating how far (in pixels) this bug moves on the y-plane, in a given instance.
+		*@param speed An int indicating the number of milliseconds between each bug movement.
+		*@param image An Image object who's image.src has been set to a valid image file.
+		*@param currentX An int indicating this bug's current x position.
+		*@param currentY An int indicating this bug's current y position.
+		*@param value An int indicating this bug's point value.
+		*@param dead A boolean indicating whether this bug is dead (user tapped it).
+		*@param interval This bug's setInterval() timer.
+		**/
+		function aBug(name, size, moveX, moveY, speed, image, currentX, currentY, value, dead, interval){
+			this.name  = name;
+			this.size  = size;
+			this.moveX = moveX;
+			this.moveY = moveY;
+			this.speed = speed;
+			this.value = value;
+			//this.image = image; //This property disabled until Image() allocation error is solved. See NOTE above.
+			this.dead  = dead;
+			this.currentX = currentX;
+			this.currentY = currentY;
+			this.interval = interval;
+		}
+		
+	/*******************************************************************
+	* Global variables and objects used to define the game properties. *
+	********************************************************************/
+		var startTime = 0; //Used to keep track of timing events.
+		var totalTime = 0; //Used to keep the sum of elapsed times.
+		var score = 0;
+		var hitBoxMod = 10; //Number of pixels to pad the "hit" area of a bug... Noticed taps on .apk were hard to read.
+		var unPauseInterval;
+		var end = false;   //Flag program end.
+		
+		var maxBugs  = 30; //The maximum number of bugs allowed on the canvas at any given time.
+		var numAlive = 0;  //The number of bugs on the canvas.
+		var numBugTypes = 4; //The number of bug types currently supported.
+		var bugDelay = 1500; //The number of milliseconds before the next bug spawns.
+		var bugs = []; //An array of aBug objects.
+		var bugImages = [lady, bee, fly, cricket]; //An array of bug images. Must be initialized.
+		var bugProperties = [aLady, aBee, aFly, aCricket]; //An array of bug property objects. Used to describe a bug type's behaviour.
+		var splatSounds = []; //An array of Audio() objects for splat sounds. Must be initialized.
+		var numSplatSnd; //The number of splat sounds in the "splatSounds" array. Must be initialized after "splatSounds".
+		var startSound;
+		
+	/************
+	* The game. *
+	*************/
+		
+	/*************************
+	* Game update functions. *
+	**************************/
+		
+		//Get tap coordinates when canvas is tapped.
+		$(document).ready(function(){
+			$(document).bind('touchstart', '#canvasID', function(e) {
+				xTap = e.originalEvent.touches[0].pageX;
+				yTap = e.originalEvent.touches[0].pageY;
+				//tapCoords(xTap, yTap);
+				//var data = [xTap, yTap, ladyX, ladyY];
+				//console.log(data);
+				update();
+				for(var i = 0; i < maxBugs; i++){
+				var bug = bugs[i];
+					if(bug.name != null || bug.dead == false){
+						if((xTap >= (bug.currentX-hitBoxMod) && xTap <= (bug.currentX+imgSize+hitBoxMod)) 
+								&& ((yTap - headHeight) >= (bug.currentY-hitBoxMod) && (yTap - headHeight) <= (bug.currentY+imgSize+hitBoxMod))){
+							bugHit(i);
+						}
+					}
+				}
+			});
+		});
+		
+		function menuOpened(){
+			end = !end;
+		}
+
+	/****************************
+	* Initialization functions. *
+	*****************************/
+		
+		//This is called by the body's "onload" event. Initializes variables.
+		function init(){
+			canvasInit();
+			imageInit();
+			bugInit();
+			initSounds();
+			initPlayer();
+			startSound.play();
+			run();
+		}
+		
+		//Sets the canvas to the viewport dimensions and initializes the canvas context.
+		function canvasInit(){
+			headHeight = $('[data-role="header"]').first().outerHeight(); //Get the height of first page's header.
+			footHeight = $('[data-role="footer"]').first().outerHeight(); //Get the height of first page's footer.
+			canvasHeight = viewport.height - headHeight - footHeight;     //Set the height of the canvas.
+			document.getElementById("canvasID").setAttribute("width", viewport.width);
+			document.getElementById("canvasID").setAttribute("height", canvasHeight);
+			canvas = document.getElementById("canvasID");
+			ctx = canvas.getContext("2d");
+		}
+		
+		//Pre-load all images. Prevents drawing errors.
+		function imageInit(){
+			blood = new Image();
+			blood.src = "images/blood_30x30.png";
+			lady = new Image();
+			lady.src = "images/lady.png";
+			bee = new Image();
+			bee.src = "images/bee.png";
+			fly = new Image();
+			fly.src = "images/fly.png";
+			cricket = new Image();
+			cricket.src = "images/cricket.png";
+			
+			//Reset the "bugImages" array with initialized values.
+			bugImages[0] = lady;
+			bugImages[1] = bee;
+			bugImages[2] = fly;
+			bugImages[3] = cricket;
+		}
+		
+		//Populate the bugs array with aBug objects and the intervals array with null values.
+		function bugInit(){
+			for(var i = 0; i < maxBugs; i++)
+				bugs[i] = new aBug(null, 0, 0, 0, 0, null, 0, 0, 0, true, null);
+		}
+		
+		function initSounds(){
+			var sound = new Audio();
+			sound.src = "sounds/splat1.mp3";
+			splatSounds.push(sound);
+			sound = new Audio();
+			sound.src = "sounds/splat2.mp3";
+			splatSounds.push(sound);
+			sound = new Audio();
+			sound.src = "sounds/splat3.mp3";
+			splatSounds.push(sound);
+			numSplatSnd = splatSounds.length;
+			
+			startSound = new Audio();
+			startSound.src = "sounds/spaceballs.mp3";
+		}
+		
+		function initPlayer(){
+			score = 0;
+		}
+		
+	/******************
+	* Game functions. *
+	*******************/
+		
+		//The main game loop.... If I can get it to work.
+		function run(){
+			var game = setInterval(function(){
+			//while(!end){
+				totalTime += timer();
+				if(numAlive <= maxBugs && totalTime >= bugDelay){
+					var index = addBug();
+					if(index > -1){
+						var bug = bugs[index];
+						setTimeout(function(){bug.interval = setInterval(function(){moveBug(index);}, bug.speed)},bug.speed);
+						totalTime = 0;
+					}
+				}
+				bugEscapes();
+				update();
+				/*************** DISABLED FOR FIRST PHONEGAP RELEASE ****************
+				if(end){
+					clearInterval(game);
+					stopBugs();
+					unPauseInterval = setInterval(resume(), 4);
+				}
+				*********************************************************************/
+			}, 4);
+			//}
+			//**************  There is no reason "Maximum call stack size exceeded" error should happen when setInterval works at the same interval, but the error occurs.
+			//if(!end)
+			//	setTimeout(run(), 4);
+		}
+		
+		function resume(){
+			console.log(end);
+			if(!end){
+				clearInterval(unPauseInterval);
+				resumeBugs();
+				run();
+			}
+				
+		}
+		
+		function resumeBugs(){
+			for(var i = 0; i < maxBugs; i++){
+				var bug = bugs[i];
+				if(!bug.dead){
+					var bugType = findTypeIndex(bug.name);
+					var properties = bugProperties[bugType];
+					setTimeout(function(){bug.interval = setInterval(function(){moveBug(index);}, properties.speed)}, properties.speed);
+				}
+			}
+		}
+		
+		function stopBugs(){
+			for(var i = 0; i < maxBugs; i++){
+				var bug = bugs[i];
+				clearInterval(bug.interval);
+			}
+		}
+		
+		function update(){
+			document.getElementById("score").innerHTML = score;
+		}
+		
+		
+		/**
+		*Creates a new bug, if there is an available spot in the "bugs" array, and draws it on the top of the canvas at a random x-coordinate.
+		*@return The index of the "bugs" array where the new bug was added, or -1 if a bug was not added.
+		**/
+		function addBug(){
+			var bug;
+			var bugNum = getRandom(numBugTypes);
+			var bugIndex = -1;
+			for(var i = 0; i < maxBugs; i++){
+				bug = bugs[i];
+				if(bug.name == null || bug.dead == true){
+					var properties = bugProperties[bugNum];
+					bug.name  = properties.name;
+					bug.moveX = properties.moveX;
+					bug.moveY = properties.moveY;
+					bug.speed = properties.speed;
+					bug.value = properties.value;
+					bug.dead  = false;
+					bug.currentX = getRandom(spawnArea);
+					bug.currentY = 0;
+					numAlive++;
+					bugIndex = i;
+					break;
+				}
+			}
+			ctx.drawImage(bugImages[bugNum], bug.currentX, bug.currentY);
+			return bugIndex;
+		}
+		
+		function moveBug(index){
+			var bug = bugs[index];
+			ctx.clearRect(bug.currentX, bug.currentY, imgSize, imgSize);
+			//Move bug a random distance left(negative movement) or right(positive movement), with an absolute value of bug.moveX.
+			if(bug.name != "lady" && bug.name != null){
+				var randomVal;
+				//If the bug is on the wall, move it in the opposite direction.
+				if(bug.currentX == 0)
+					randomVal = getRandom(bug.moveX);
+				else if(bug.currentX == (viewport.width - imgSize))
+					randomVal = getRandom(bug.moveX) * -1; 
+				else{
+					randomVal = getRandom(bug.moveX * 2);
+					if(randomVal > bug.moveX){
+						randomVal = bug.moveX - randomVal;
+					}
+				}
+				bug.currentX += randomVal;
+				//If the bug moves off the canvas, move it to the appropriate wall.
+				if(bug.currentX > (viewport.width - imgSize))
+					bug.currentX = viewport.width - imgSize;
+				if(bug.currentX < 0)
+					bug.currentX = 0;
+			}else
+				bug.currentX += bug.moveX;
+			bug.currentY += bug.moveY;
+			var bugType = findTypeIndex(bug.name);
+			ctx.drawImage(bugImages[bugType], bug.currentX, bug.currentY);
+		}
+		
+		//Handles the event when a user taps a live bug. Sets bug.dead = true, removes the bug from the canvas,
+		// replaces the bug with the blood image, and increments the score.
+		function bugHit(index){
+			var bug = bugs[index];
+			clearInterval(bug.interval);
+			//Clear the bug image. Image clear box increased by 1px boarder for unknown error.
+			ctx.clearRect(bug.currentX-1, bug.currentY-1, imgSize+1, imgSize+1);
+			var sound = splatSounds[getRandom(splatSounds.length)];
+			sound.play();
+			ctx.drawImage(blood, bug.currentX, bug.currentY);
+			bug.dead = true;
+			numAlive--;
+			var value = bug.value;
+			score += value;
+		}
+		
+		//Handles the event when a bug reaches the bottom of the canvas. Sets bug.dead = true, and removes the
+		// bug from the canvas.
+		function bugEscapes(){
+			for(var i = 0; i < maxBugs; i++){
+				var bug = bugs[i];
+				if(bug.dead == false && bug.currentY >= (canvasHeight - imgSize)){
+					clearInterval(bug.interval);
+					//Clear the bug image. Image clear box increased by 1px boarder for unknown error.
+					ctx.clearRect(bug.currentX-1, bug.currentY-1, imgSize+1, imgSize+1);
+					bug.dead = true;
+					numAlive--;
+				}
+			}
+		}
+		
+	/****************************
+	* Utility/Helper functions. *
+	*****************************/
+		
+		//Returns a random number from 0 to the given "range".
+		function getRandom(range){
+			return Math.floor(Math.random() * range);
+		}
+		
+		//Helper function. Used to identify the global index of the given bug name.
+		function findTypeIndex(name){
+			switch(name){
+				case "lady": return 0;
+				case "bee" : return 1;
+				case "fly" : return 2;
+				case "cricket": return 3;
+				default: return -1;
+			}
+		}
+		
+		/**
+		*Used to measure the time since this function was last called, or since page load(if initial call).
+		*NOTE: This implementation can only be used for one function, since "startTime" is not instantiated for each function.
+		*@return A float, given in milliseconds.fractionalMillisecond format. The time since the previous call of this function, or
+		* if this function has not been called before; the time since the page loaded.
+		**/
+		function timer(){
+			var endTime = performance.now();
+			var elapsedTime = endTime - startTime;
+			startTime = performance.now();
+			return elapsedTime;
+		}
+		
+	/******************
+	* Test functions. *
+	*******************/
+		
+		//Test function to determine coordinates.
+		function tapCoords(x, y){
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.font = "30px Cursive";
+			ctx.fillStyle = "white";
+			ctx.fillText("Tapped",50,50);
+			ctx.fillText("X: " + x,50,100);
+			ctx.fillText("Y: " + y,50,150);
+			ctx.fillText("Width: " + viewport.width,50,200);
+			ctx.fillText("Height: " + viewport.height,50,250);
+		}
+		
+	</script>
+
+	<style type="text/css">
+		body {
+			margin: 0px;
+			padding: 0px;
+		}
+		#canvasID{
+			background: black;
+		}
+	</style>
+
+	</head>
+
+	<body onload="init()">
+
+		<div data-role="page" data-theme="a">
+			<div data-role="header" data-fullscreen="true">
+				<h1>Score: <span id="score">0</span></h1>
+			</div>
+
+			<div data-role=content>
+				<div id="canvasWrapper">
+					<canvas id="canvasID" width="300" height="300"></canvas> 
+				</div>
+				
+			</div>
+			<div data-role="footer" data-position="fixed" data-fullscreen="true" data-tap-toggle="false" data-theme="a">
+				<div data-role="navbar">
+					<ul>
+						<li><a onclick="menuOpened()" href="#popupMenu" data-rel="popup" data-role="button" data-inline="true" data-position-to="window">Menu - Under Construction</a></li>
+					</ul>
+				</div>
+			</div>
+			<div data-role="popup" id="popupMenu" data-theme="a">
+				<ul data-role="listview" data-inset="true" style="min-width:210px;" data-theme="b">
+					<li data-role="divider" data-theme="a">Popup API</li>
+					<li><a href="options.html">Restart</a></li>
+					<li><a href="methods.html">Quit</a></li>
+					<li><a onclick="menuOpened()" href="#page" >Resume</a></li>
+				</ul>
+		</div>
+		</div>
+		
+	</body>
+</html>
